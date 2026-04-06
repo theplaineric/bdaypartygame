@@ -19,6 +19,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       NEXT_PUBLIC_BASE_PATH: /bdaypartygame
     steps:
       - name: Checkout
@@ -52,6 +53,8 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

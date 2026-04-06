@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Brainrot Kahoot",
-  description: "A chaotic multiplayer quiz built with Next.js and PartyKit",
+  description: "A chaotic static quiz built with Next.js",
 };
 
 export const viewport: Viewport = {
