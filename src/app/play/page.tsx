@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ANSWER_COLORS, BLIND_ROUND_VISIBLE_MS } from '@/lib/constants';
 import { questions } from '@/lib/questions';
@@ -29,10 +30,28 @@ interface QuestionResult {
   correctLabel: string;
 }
 
+const BEST_SCORE_STORAGE_KEY = 'brainrot-kahoot:best-score';
+
+function readBestScore() {
+  if (typeof window === 'undefined') return 0;
+
+  try {
+    const savedBest = Number(window.localStorage.getItem(BEST_SCORE_STORAGE_KEY) ?? '0');
+    return Number.isFinite(savedBest) ? savedBest : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function withBasePath(src?: string) {
   if (!src) return undefined;
   if (!src.startsWith('/') || !STATIC_BASE_PATH) return src;
   return `${STATIC_BASE_PATH}${src}`;
+}
+
+function formatChaosLabel(value?: string) {
+  if (!value) return null;
+  return value.replace(/-/g, ' ');
 }
 
 function getCorrectLabel(question: Question) {
@@ -247,6 +266,7 @@ export default function PlayPage() {
   const [sliderValue, setSliderValue] = useState(50);
   const [lastResult, setLastResult] = useState<QuestionResult | null>(null);
   const [results, setResults] = useState<QuestionResult[]>([]);
+  const [bestScore, setBestScore] = useState(readBestScore);
 
   const question = questions[currentIndex];
   const effectiveTimeLimit = useMemo(
@@ -259,6 +279,10 @@ export default function PlayPage() {
   const blindHidden = question.chaos === 'blind-round'
     && questionStartedAt !== null
     && (now - questionStartedAt) >= BLIND_ROUND_VISIBLE_MS;
+  const answeredCount = results.length + (phase === 'reveal' ? 1 : 0);
+  const accuracy = answeredCount > 0
+    ? Math.round((results.filter((result) => result.correct).length / answeredCount) * 100)
+    : 0;
 
   useEffect(() => {
     if (phase !== 'question') return;
@@ -291,6 +315,15 @@ export default function PlayPage() {
   const showNextQuestion = useCallback(() => {
     const nextIndex = currentIndex + 1;
     if (nextIndex >= questions.length) {
+      const nextBestScore = Math.max(score, bestScore);
+      if (nextBestScore !== bestScore) {
+        setBestScore(nextBestScore);
+        try {
+          window.localStorage.setItem(BEST_SCORE_STORAGE_KEY, String(nextBestScore));
+        } catch {
+          // Ignore storage access issues.
+        }
+      }
       setPhase('complete');
       setQuestionStartedAt(null);
       return;
@@ -308,7 +341,7 @@ export default function PlayPage() {
     setNow(Date.now());
     setQuestionStartedAt(Date.now());
     setPhase('question');
-  }, [currentIndex]);
+  }, [bestScore, currentIndex, score]);
 
   const submitAnswer = useCallback((answer: string | number | number[] | null) => {
     if (phase !== 'question' || !questionStartedAt) return;
@@ -351,6 +384,23 @@ export default function PlayPage() {
         <div className="mt-10 rounded-3xl border border-white/10 bg-white/5 px-8 py-6">
           <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">Question Count</p>
           <p className="mt-2 text-5xl font-black text-neon-pink">{questions.length}</p>
+          <p className="mt-4 text-sm text-zinc-400">
+            Standard rounds reward speed. Chaos rounds can hide answers, flip scoring, or turn into opinion votes.
+          </p>
+        </div>
+        <div className="mt-6 grid w-full max-w-2xl gap-3 text-left text-sm text-zinc-300 md:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="font-black text-white">Fast answers</p>
+            <p className="mt-1 text-zinc-400">Move quickly on standard rounds to stack points.</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="font-black text-white">Chaos tags</p>
+            <p className="mt-1 text-zinc-400">Watch the pink pill. Some rounds change the rules.</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="font-black text-white">Best score</p>
+            <p className="mt-1 text-zinc-400">{bestScore.toLocaleString()} on this device.</p>
+          </div>
         </div>
         <button
           onClick={startQuiz}
@@ -358,24 +408,77 @@ export default function PlayPage() {
         >
           PLAY QUIZ
         </button>
+        <Link
+          href="/"
+          className="mt-4 text-sm font-bold uppercase tracking-[0.2em] text-zinc-500 transition-colors hover:text-zinc-300"
+        >
+          Back Home
+        </Link>
       </main>
     );
   }
 
   if (phase === 'complete') {
     return (
-      <main className="mx-auto flex min-h-full w-full max-w-4xl flex-col items-center justify-center px-6 py-12 text-center">
-        <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">Final Score</p>
-        <h1 className="mt-2 text-7xl font-black text-neon-green">{score.toLocaleString()}</h1>
-        <p className="mt-4 text-xl text-zinc-300">
-          {correctCount} / {questions.length} rounds cleared
-        </p>
-        <button
-          onClick={startQuiz}
-          className="mt-10 rounded-2xl bg-neon-blue px-10 py-5 text-xl font-black text-black transition-transform hover:scale-105 active:scale-95"
-        >
-          PLAY AGAIN
-        </button>
+      <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-6 py-12">
+        <div className="text-center">
+          <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">Final Score</p>
+          <h1 className="mt-2 text-7xl font-black text-neon-green">{score.toLocaleString()}</h1>
+          <p className="mt-4 text-xl text-zinc-300">
+            {correctCount} / {questions.length} rounds cleared
+          </p>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+              <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">Accuracy</p>
+              <p className="mt-2 text-4xl font-black text-white">{Math.round((correctCount / questions.length) * 100)}%</p>
+            </div>
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+              <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">Best Score</p>
+              <p className="mt-2 text-4xl font-black text-neon-yellow">{Math.max(score, bestScore).toLocaleString()}</p>
+            </div>
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+              <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">Streak Peak</p>
+              <p className="mt-2 text-4xl font-black text-white">{Math.max(0, ...results.map((result) => result.nextStreak))}</p>
+            </div>
+          </div>
+        </div>
+        <div className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-5">
+          <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">Round Breakdown</p>
+          <div className="mt-4 space-y-3">
+            {results.map((result, index) => (
+              <div
+                key={result.questionId}
+                className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 md:flex-row md:items-center md:justify-between"
+              >
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Q{index + 1}</p>
+                  <p className="font-bold text-white">{result.prompt}</p>
+                  <p className="text-sm text-zinc-400">Your answer: {result.answerLabel}</p>
+                </div>
+                <div className="text-left md:text-right">
+                  <p className={`font-black ${result.correct ? 'text-neon-green' : 'text-red-400'}`}>
+                    {result.timedOut ? 'Timed Out' : result.correct ? 'Correct' : 'Missed'}
+                  </p>
+                  <p className="text-sm text-zinc-400">+{result.scoreDelta}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mt-8 flex flex-col items-center gap-4 text-center">
+          <button
+            onClick={startQuiz}
+            className="rounded-2xl bg-neon-blue px-10 py-5 text-xl font-black text-black transition-transform hover:scale-105 active:scale-95"
+          >
+            PLAY AGAIN
+          </button>
+          <Link
+            href="/"
+            className="text-sm font-bold uppercase tracking-[0.2em] text-zinc-500 transition-colors hover:text-zinc-300"
+          >
+            Back Home
+          </Link>
+        </div>
       </main>
     );
   }
@@ -395,6 +498,7 @@ export default function PlayPage() {
           <p><span className="text-zinc-500">Expected:</span> {lastResult.correctLabel}</p>
           <p><span className="text-zinc-500">Streak:</span> {lastResult.nextStreak}</p>
           <p><span className="text-zinc-500">Total score:</span> {score.toLocaleString()}</p>
+          <p><span className="text-zinc-500">Running accuracy:</span> {accuracy}%</p>
         </div>
         <button
           onClick={showNextQuestion}
@@ -431,11 +535,22 @@ export default function PlayPage() {
         />
       </div>
 
-      <div className="mb-6 flex items-center gap-3 text-sm text-zinc-400">
+      <div className="mb-6 flex flex-wrap items-center gap-3 text-sm text-zinc-400">
         <span>{Math.ceil(remainingMs / 1000)}s left</span>
+        <span>Streak {streak}</span>
         {question.chaos ? (
           <span className="rounded-full border border-neon-pink/60 bg-neon-pink/10 px-3 py-1 font-bold text-neon-pink">
-            {question.chaos}
+            {formatChaosLabel(question.chaos)}
+          </span>
+        ) : null}
+        {'correctIndices' in question && question.correctIndices?.length ? (
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+            multi-select
+          </span>
+        ) : null}
+        {question.answerMode === 'slider' ? (
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+            slider
           </span>
         ) : null}
       </div>
