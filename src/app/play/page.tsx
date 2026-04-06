@@ -31,6 +31,15 @@ interface QuestionResult {
 }
 
 const BEST_SCORE_STORAGE_KEY = 'brainrot-kahoot:best-score';
+const CHAOS_GIFS = [
+  'https://media.giphy.com/media/bhoRGJHLkcNUz7aKSn/giphy.gif',
+  'https://media.giphy.com/media/uBP61bsDVKNSQIso4i/giphy.gif',
+];
+const MUSIC_VIBE_GIFS = [
+  'https://media.giphy.com/media/2J54tSa4XjIHLFeVfS/giphy.gif',
+  'https://media.giphy.com/media/5CuK6HUWXTg7urXdXU/giphy.gif',
+  'https://media.giphy.com/media/qZFHPmI9fSb6D13BsC/giphy.gif',
+];
 
 function readBestScore() {
   if (typeof window === 'undefined') return 0;
@@ -52,6 +61,178 @@ function withBasePath(src?: string) {
 function formatChaosLabel(value?: string) {
   if (!value) return null;
   return value.replace(/-/g, ' ');
+}
+
+function ChaosAtmosphere({
+  active,
+  question,
+}: {
+  active: boolean;
+  question: Question;
+}) {
+  const [visibleGif, setVisibleGif] = useState<string | null>(null);
+  const musicRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (!active) {
+      if (musicRef.current) {
+        musicRef.current.pause();
+        musicRef.current.src = '';
+        musicRef.current = null;
+      }
+      return;
+    }
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const schedule = (callback: () => void, delayMs: number) => {
+      const timeout = setTimeout(callback, delayMs);
+      timers.push(timeout);
+      return timeout;
+    };
+
+    if (question.chaos) {
+      const audio = new Audio(withBasePath('/audio/chaos-music.mp3'));
+      audio.loop = true;
+      audio.volume = 0.45;
+      audio.play().catch(() => {});
+      musicRef.current = audio;
+    }
+
+    const gifPool = question.chaos ? CHAOS_GIFS : (question.audioUrl ? MUSIC_VIBE_GIFS : []);
+    if (gifPool.length > 0) {
+      const runFlash = () => {
+        const gif = gifPool[Math.floor(Math.random() * gifPool.length)];
+        setVisibleGif(gif);
+        schedule(() => setVisibleGif(null), 900);
+        schedule(runFlash, 5000 + Math.floor(Math.random() * 5000));
+      };
+
+      schedule(runFlash, question.chaos ? 2200 : 3200);
+    }
+
+    return () => {
+      timers.forEach(clearTimeout);
+      setVisibleGif(null);
+      if (musicRef.current) {
+        musicRef.current.pause();
+        musicRef.current.src = '';
+        musicRef.current = null;
+      }
+    };
+  }, [active, question.audioUrl, question.chaos, question.id]);
+
+  if (!active || !visibleGif) return null;
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-20 flex items-center justify-center">
+      <img
+        src={visibleGif}
+        alt=""
+        className="max-h-[38vh] max-w-[38vw] rounded-3xl opacity-90 shadow-2xl"
+      />
+    </div>
+  );
+}
+
+function RevealSoundEffects({ sounds, questionId }: { sounds?: string[]; questionId: string }) {
+  useEffect(() => {
+    if (!sounds?.length) return;
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    sounds.forEach((src, index) => {
+      timers.push(setTimeout(() => {
+        const audio = new Audio(withBasePath(src));
+        audio.play().catch(() => {});
+      }, index * 1200));
+    });
+
+    return () => timers.forEach(clearTimeout);
+  }, [questionId, sounds]);
+
+  return null;
+}
+
+function RevealDelayOverlay({ question }: { question: Question }) {
+  const [visible, setVisible] = useState(Boolean(question.revealDelayGif && question.revealDelayMs));
+
+  useEffect(() => {
+    if (!question.revealDelayGif || !question.revealDelayMs) return;
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    question.revealDelaySounds?.forEach(({ src, delayMs, startAt }) => {
+      timers.push(setTimeout(() => {
+        const audio = new Audio(withBasePath(src));
+        if (startAt) audio.currentTime = startAt;
+        audio.play().catch(() => {});
+      }, delayMs));
+    });
+
+    timers.push(setTimeout(() => setVisible(false), question.revealDelayMs));
+
+    return () => timers.forEach(clearTimeout);
+  }, [question]);
+
+  if (!visible || !question.revealDelayGif) return null;
+
+  return (
+    <div className="fixed inset-0 z-30 flex flex-col items-center justify-center bg-black">
+      <img
+        src={question.revealDelayGif}
+        alt=""
+        className="max-h-[55vh] max-w-[75vw] rounded-3xl object-contain"
+      />
+      <p className="mt-6 text-lg font-bold uppercase tracking-[0.2em] text-zinc-400">
+        calculating aura...
+      </p>
+    </div>
+  );
+}
+
+function FlashbangJumpscare({ active }: { active: boolean }) {
+  const [phase, setPhase] = useState<'idle' | 'white' | 'jumpscare' | 'done'>('idle');
+  const firedRef = useRef(false);
+
+  useEffect(() => {
+    if (!active || firedRef.current) return;
+    firedRef.current = true;
+
+    const t0 = setTimeout(() => {
+      setPhase('white');
+      const audio = new Audio(withBasePath('/audio/flashbang.mp3'));
+      audio.volume = 1;
+      audio.play().catch(() => {});
+    }, 0);
+
+    const t1 = setTimeout(() => setPhase('jumpscare'), 400);
+    const t2 = setTimeout(() => setPhase('done'), 4200);
+
+    return () => {
+      clearTimeout(t0);
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [active]);
+
+  if (phase === 'idle' || phase === 'done') return null;
+
+  return (
+    <div className="fixed inset-0 z-40">
+      {phase === 'white' ? (
+        <div className="absolute inset-0 bg-white" />
+      ) : null}
+      {phase === 'jumpscare' ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-white text-center text-black">
+          <p className="text-sm font-black uppercase tracking-[0.3em] text-red-600">jump scare</p>
+          <h2 className="mt-4 text-6xl font-black">LOOK AT THE SCREEN</h2>
+          <img
+            src={CHAOS_GIFS[0]}
+            alt=""
+            className="mt-6 max-h-[40vh] rounded-3xl object-contain shadow-2xl"
+          />
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function getCorrectLabel(question: Question) {
@@ -196,6 +377,8 @@ function evaluateQuestion(
 
 function QuestionMedia({ question }: { question: Question }) {
   const bgAudioRef = useRef<HTMLAudioElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaUrl = withBasePath(question.mediaUrl);
   const audioUrl = withBasePath(question.audioUrl);
 
@@ -216,6 +399,22 @@ function QuestionMedia({ question }: { question: Question }) {
     };
   }, [audioUrl, question.audioStartAt, question.id]);
 
+  useEffect(() => {
+    if (question.mediaType !== 'video' || !videoRef.current) return;
+
+    const video = videoRef.current;
+    video.currentTime = 0;
+    video.play().catch(() => {});
+  }, [mediaUrl, question.id, question.mediaType]);
+
+  useEffect(() => {
+    if (question.mediaType !== 'audio' || !audioRef.current) return;
+
+    const audio = audioRef.current;
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+  }, [mediaUrl, question.id, question.mediaType]);
+
   if (!mediaUrl && !audioUrl) return null;
 
   return (
@@ -230,8 +429,11 @@ function QuestionMedia({ question }: { question: Question }) {
       {question.mediaType === 'video' ? (
         <video
           key={mediaUrl}
+          ref={videoRef}
           src={mediaUrl}
+          autoPlay
           controls
+          loop
           playsInline
           className="max-h-[32vh] w-full rounded-2xl"
         />
@@ -239,7 +441,9 @@ function QuestionMedia({ question }: { question: Question }) {
       {question.mediaType === 'audio' ? (
         <audio
           key={mediaUrl}
+          ref={audioRef}
           src={mediaUrl}
+          autoPlay
           controls
           className="w-full"
         />
@@ -279,6 +483,10 @@ export default function PlayPage() {
   const blindHidden = question.chaos === 'blind-round'
     && questionStartedAt !== null
     && (now - questionStartedAt) >= BLIND_ROUND_VISIBLE_MS;
+  const flashbangActive = phase === 'question'
+    && question.id === 'q14'
+    && questionStartedAt !== null
+    && (now - questionStartedAt) >= 5000;
   const answeredCount = results.length + (phase === 'reveal' ? 1 : 0);
   const accuracy = answeredCount > 0
     ? Math.round((results.filter((result) => result.correct).length / answeredCount) * 100)
@@ -486,6 +694,8 @@ export default function PlayPage() {
   if (phase === 'reveal' && lastResult) {
     return (
       <main className="mx-auto flex min-h-full w-full max-w-4xl flex-col justify-center px-6 py-10">
+        <RevealSoundEffects sounds={question.revealAudio} questionId={question.id} />
+        <RevealDelayOverlay key={`${question.id}-delay`} question={question} />
         <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">
           Question {currentIndex + 1} of {questions.length}
         </p>
@@ -512,6 +722,8 @@ export default function PlayPage() {
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-6 py-8">
+      <ChaosAtmosphere active={phase === 'question'} question={question} />
+      <FlashbangJumpscare active={flashbangActive} />
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">
